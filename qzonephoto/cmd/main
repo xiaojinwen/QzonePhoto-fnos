@@ -1,0 +1,106 @@
+#!/bin/bash
+# 应用启停与健康检查
+# start  -> 启动容器；stop -> 停止容器；status -> 运行中 exit 0 / 未运行 exit 3
+set -u
+
+APPNAME="${TRIM_APPNAME:-com.qzonephoto.app}"
+APP_ROOT="/usr/local/apps/@appcenter/${APPNAME}"
+VAR_DIR="${TRIM_PKGVAR:-${APP_ROOT}/var}"
+COMPOSE_FILE="${VAR_DIR}/docker-compose.yml"
+PROJECT_NAME="qzonephoto"
+CONTAINER_NAME="qzonephoto-app"
+LOG_FILE="${VAR_DIR}/app.log"
+
+log() {
+    mkdir -p "$VAR_DIR"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [main] $*" >>"$LOG_FILE" 2>/dev/null
+}
+
+fail() {
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" >"${TRIM_TEMP_LOGFILE}"
+    fi
+    log "失败：$1"
+    exit 1
+}
+
+container_running() {
+    [ -n "$(docker ps -q -f "name=^/${CONTAINER_NAME}$" 2>/dev/null)" ]
+}
+
+case "${1:-}" in
+start)
+    log "start 被调用"
+    if ! command -v docker >/dev/null 2>&1; then
+        fail "未检测到 Docker，请先在飞牛应用中心安装并启动 Docker"
+    fi
+    if ! docker info >/dev/null 2>&1; then
+        fail "Docker 服务未运行，请在应用中心启动 Docker 后重试"
+    fi
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        fail "未找到容器编排文件 ${COMPOSE_FILE}，请重新安装本应用"
+    fi
+
+    if container_running; then
+        log "容器已在运行"
+        exit 0
+    fi
+
+    if ! docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d >>"$LOG_FILE" 2>&1; then
+        fail "容器启动失败，请查看日志 ${LOG_FILE}"
+    fi
+
+    for _ in $(seq 1 30); do
+        if container_running; then
+            log "容器已启动"
+            exit 0
+        fi
+        sleep 1
+    done
+    fail "容器启动超时，请查看日志 ${LOG_FILE}"
+    ;;
+stop)
+    log "stop 被调用"
+    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down --remove-orphans >>"$LOG_FILE" 2>&1 || true
+    docker rm -f "$CONTAINER_NAME" >>"$LOG_FILE" 2>&1 || true
+    log "容器已停止"
+    exit 0
+    ;;
+status)
+    if command -v docker >/dev/null 2>&1 && container_running; then
+        exit 0
+    fi
+    exit 3
+    ;;
+logs)
+    # 排障用：打印日志真实路径（fnOS 安装目录由用户选择存储空间，路径不固定）
+    echo "APPNAME      = ${APPNAME}"
+    echo "APP_ROOT     = ${APP_ROOT}"
+    echo "VAR_DIR      = ${VAR_DIR}"
+    echo "应用日志     = ${LOG_FILE}"
+    echo "构建日志     = ${VAR_DIR}/build.log"
+    echo "构建日志副本 = /tmp/qzonephoto-build.log"
+    echo "容器编排     = ${COMPOSE_FILE}"
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "TRIM_TEMP_LOGFILE = ${TRIM_TEMP_LOGFILE}"
+    fi
+    for f in "${LOG_FILE}" "${VAR_DIR}/build.log"; do
+        if [ -f "$f" ]; then
+            echo "---------- 末尾 30 行：$f ----------"
+            tail -n 30 "$f"
+        else
+            echo "---------- 不存在：$f ----------"
+        fi
+    done
+    exit 0
+    ;;
+reload)
+    log "reload 被调用"
+    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down --remove-orphans >>"$LOG_FILE" 2>&1 || true
+    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d >>"$LOG_FILE" 2>&1 || true
+    exit 0
+    ;;
+*)
+    exit 1
+    ;;
+esac

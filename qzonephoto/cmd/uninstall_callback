@@ -1,0 +1,29 @@
+#!/bin/bash
+# 卸载后清理：根据卸载向导选择是否删除容器、镜像与用户数据
+# 注意：本脚本执行时 target 目录已被移除，不可依赖 target 中的任何文件
+set -u
+
+APPNAME="${TRIM_APPNAME:-com.qzonephoto.app}"
+APP_ROOT="/usr/local/apps/@appcenter/${APPNAME}"
+VAR_DIR="${TRIM_PKGVAR:-${APP_ROOT}/var}"
+SHARE_NAME="qzonephoto-downloads"
+
+DATA_ACTION="${wizard_data_action:-keep}"
+REMOVE_IMAGE="${wizard_remove_image:-true}"
+
+if command -v docker >/dev/null 2>&1; then
+    docker rm -f qzonephoto-app >/dev/null 2>&1 || true
+    if [ "$REMOVE_IMAGE" = "true" ]; then
+        IMAGES="$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^qzonephoto-fnos:' || true)"
+        for img in $IMAGES; do
+            docker rmi -f "$img" >/dev/null 2>&1 || true
+        done
+    fi
+fi
+
+if [ "$DATA_ACTION" = "delete" ]; then
+    rm -rf "${VAR_DIR}"
+    rm -rf "${APP_ROOT}/shares/${SHARE_NAME}"
+fi
+
+exit 0

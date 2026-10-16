@@ -1,0 +1,17 @@
+appname=com.qzonephoto.app
+version=2.8.1
+display_name=企鹅相册
+desc=企鹅相册 · QzonePhoto —— 用于备份与管理 QQ 空间相册、照片、视频与动态的桌面客户端。<br/>本包将其官方 Linux 版本运行在 Docker 容器中，通过浏览器远程桌面（noVNC）直接操作，无需在电脑上安装客户端。<br/>上游项目：<a href="https://github.com/11273/QzonePhoto" target="_blank">github.com/11273/QzonePhoto</a>（非腾讯官方产品）
+platform=x86
+source=thirdparty
+maintainer=11273
+maintainer_url=https://github.com/11273/QzonePhoto
+distributor=fnOS Community
+distributor_url=https://github.com/11273/QzonePhoto
+service_port=8080
+checkport=true
+os_min_version=0.9.0
+desktop_uidir=ui
+desktop_applaunchname=com.qzonephoto.app.main
+ctl_stop=true
+changelog=2.8.1 优化远程桌面显示效果：新增「界面缩放」（100%/125%/150%/175%/200%，以更高像素密度渲染，放大后依然清晰）；主程序窗口改为自动铺满虚拟屏幕并在运行中持续校正；桌面图标与首屏打开 noVNC 时默认关闭画面拉伸（1:1 原生像素，不再发虚）；升级后会自动重建一次镜像以应用新的容器内脚本。

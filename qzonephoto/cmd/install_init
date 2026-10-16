@@ -1,0 +1,24 @@
+#!/bin/bash
+# 安装前环境检查：Docker 是否可用
+set -u
+
+fail() {
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" >"${TRIM_TEMP_LOGFILE}"
+    fi
+    exit 1
+}
+
+if ! command -v docker >/dev/null 2>&1; then
+    fail "未检测到 Docker。请先在飞牛「应用中心」安装 Docker 应用，安装成功后再安装企鹅相册。"
+fi
+
+if ! docker info >/dev/null 2>&1; then
+    fail "Docker 服务未运行。请在「应用中心 → Docker」中启动后再安装企鹅相册。"
+fi
+
+if ! docker compose version >/dev/null 2>&1; then
+    fail "当前 Docker 缺少 Compose 插件，请升级飞牛 Docker 组件后再安装。"
+fi
+
+exit 0

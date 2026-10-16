@@ -1,0 +1,16 @@
+#!/bin/bash
+# 配置前准备：校验 Docker 仍可用，避免配置后无法重启
+set -u
+
+fail() {
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" >"${TRIM_TEMP_LOGFILE}"
+    fi
+    exit 1
+}
+
+if ! command -v docker >/dev/null 2>&1; then
+    fail "未检测到 Docker，无法修改配置"
+fi
+
+exit 0

@@ -1,0 +1,222 @@
+[
+ {
+  "stepTitle": "显示与访问",
+  "items": [
+   {
+    "type": "tips",
+    "helpText": "修改后会自动重启容器，正在进行的下载任务会中断，请确认后再提交。<br/><br/><b>界面偏小</b>：调大下方「界面缩放」，它以更高像素密度渲染，放大后依然清晰；<b>画面偏糊</b>：多半是浏览器把画面拉伸了，进入桌面后点开 noVNC 左侧边栏 → Settings → Scaling，选 <b>None</b>（1:1 原生像素）最清晰；若想让画面填满浏览器窗口可选 <b>Local Scaling</b>，代价是略糊。<br/><br/><b>推荐组合</b>：1600x900 + 125%、1920x1080 + 150%、2560x1440 + 150%。"
+   },
+   {
+    "type": "select",
+    "field": "wizard_screen_size",
+    "label": "远程桌面分辨率",
+    "description": "留空表示保持当前设置",
+    "initValue": "",
+    "options": [
+     {
+      "label": "保持当前设置",
+      "value": ""
+     },
+     {
+      "label": "1280x720",
+      "value": "1280x720"
+     },
+     {
+      "label": "1600x900",
+      "value": "1600x900"
+     },
+     {
+      "label": "1920x1080",
+      "value": "1920x1080"
+     },
+     {
+      "label": "2560x1440",
+      "value": "2560x1440"
+     }
+    ]
+   },
+   {
+    "type": "select",
+    "field": "wizard_ui_scale",
+    "label": "界面缩放",
+    "description": "放大应用内的文字和按钮；留空表示保持当前设置",
+    "initValue": "",
+    "options": [
+     {
+      "label": "保持当前设置",
+      "value": ""
+     },
+     {
+      "label": "100%（原始大小）",
+      "value": "1"
+     },
+     {
+      "label": "125%（推荐）",
+      "value": "1.25"
+     },
+     {
+      "label": "150%",
+      "value": "1.5"
+     },
+     {
+      "label": "175%",
+      "value": "1.75"
+     },
+     {
+      "label": "200%（最大）",
+      "value": "2"
+     }
+    ]
+   },
+   {
+    "type": "password",
+    "field": "wizard_vnc_password",
+    "label": "新的远程桌面密码",
+    "description": "留空表示保持原密码不变",
+    "rules": [
+     {
+      "pattern": "^[A-Za-z0-9_.@-]{0,32}$",
+      "message": "仅支持字母、数字与 . _ @ - ，长度不超过 32"
+     }
+    ]
+   },
+   {
+    "type": "switch",
+    "field": "wizard_clear_password",
+    "label": "清除密码",
+    "description": "开启后远程桌面不再需要密码",
+    "initValue": "false"
+   }
+  ]
+ },
+ {
+  "stepTitle": "存储与挂载",
+  "items": [
+   {
+    "type": "tips",
+    "helpText": "重新计算挂载会<b>重启容器</b>，正在进行的下载任务会中断。<br/>选择「保持当前设置」则不做任何改动。<br/><br/>应用只会装在一个存储卷上。若还需要让客户端访问<b>其它盘</b>的文件，这里可以把其它存储卷一并挂进容器：<b>容器内路径与飞牛上的路径完全一致</b>（例如 <code>/vol1</code> → <code>/vol1</code>），在客户端里直接填你在飞牛文件管理器里看到的路径即可。<br/>出于安全考虑，<code>/etc</code>、<code>/usr</code>、<code>/var</code> 等系统目录<b>一律拒绝挂载</b>；挂载整个存储卷意味着容器内可以看到该卷上的全部文件，<b>强烈建议同时设置远程桌面密码</b>；路径中不要包含空格。"
+   },
+   {
+    "type": "select",
+    "field": "wizard_mount_mode",
+    "label": "其它存储卷的挂载方式",
+    "description": "容器内路径与宿主机保持一致；系统目录会被自动过滤",
+    "initValue": "",
+    "options": [
+     {
+      "label": "保持当前设置",
+      "value": ""
+     },
+     {
+      "label": "自动挂载所有存储卷（推荐）",
+      "value": "auto"
+     },
+     {
+      "label": "仅挂载下方手动填写的目录",
+      "value": "manual"
+     }
+    ]
+   },
+   {
+    "type": "text",
+    "field": "wizard_extra_mounts",
+    "label": "额外挂载目录（可选）",
+    "description": "在自动探测之外再追加的目录；多个用空格、逗号或换行分隔，例如 /vol1/照片 /mnt/usb",
+    "initValue": "",
+    "rules": [
+     {
+      "pattern": "^[^;|&`]{0,500}$",
+      "message": "不能包含 ; | & ` 等字符"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "stepTitle": "版本维护",
+  "items": [
+   {
+    "type": "tips",
+    "helpText": "仅在需要切换上游版本时修改，版本号需真实存在于 <a href='https://github.com/11273/QzonePhoto/releases' target='_blank'>GitHub Releases</a>。"
+   },
+   {
+    "type": "text",
+    "field": "wizard_app_version",
+    "label": "上游版本号",
+    "description": "留空表示保持当前版本",
+    "initValue": "",
+    "rules": [
+     {
+      "pattern": "^([0-9]+\\.[0-9]+\\.[0-9]+)?$",
+      "message": "格式应为 x.y.z，例如 2.8.0"
+     }
+    ]
+   },
+   {
+    "type": "text",
+    "field": "wizard_github_mirror",
+    "label": "GitHub 加速前缀",
+    "description": "留空表示保持当前设置；更换后可填任意 http(s) 前缀，例如 https://ghfast.top/",
+    "initValue": "",
+    "rules": [
+     {
+      "pattern": "^(https?://.*)?$",
+      "message": "需以 http:// 或 https:// 开头"
+     }
+    ]
+   },
+   {
+    "type": "select",
+    "field": "wizard_apt_mirror",
+    "label": "容器内 Debian 软件源",
+    "description": "仅在需要重建镜像时生效；留空表示保持当前设置",
+    "initValue": "",
+    "options": [
+     {
+      "label": "保持当前设置",
+      "value": ""
+     },
+     {
+      "label": "腾讯云",
+      "value": "http://mirrors.cloud.tencent.com/debian"
+     },
+     {
+      "label": "清华 TUNA",
+      "value": "http://mirrors.tuna.tsinghua.edu.cn/debian"
+     },
+     {
+      "label": "阿里云",
+      "value": "http://mirrors.aliyun.com/debian"
+     },
+     {
+      "label": "华为云",
+      "value": "http://mirrors.huaweicloud.com/debian"
+     },
+     {
+      "label": "中科大 USTC",
+      "value": "http://mirrors.ustc.edu.cn/debian"
+     },
+     {
+      "label": "南京大学",
+      "value": "http://mirrors.nju.edu.cn/debian"
+     },
+     {
+      "label": "网易 163",
+      "value": "http://mirrors.163.com/debian"
+     },
+     {
+      "label": "Debian 官方源",
+      "value": "http://deb.debian.org/debian"
+     }
+    ]
+   },
+   {
+    "type": "switch",
+    "field": "wizard_rebuild_image",
+    "label": "强制重建镜像",
+    "description": "镜像损坏或依赖缺失时可强制重新构建",
+    "initValue": "false"
+   }
+  ]
+ }
+]

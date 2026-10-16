@@ -1,0 +1,173 @@
+#!/bin/bash
+# 安装后处理：写入配置、生成容器编排、构建 Docker 镜像
+set -u
+
+APPNAME="${TRIM_APPNAME:-com.qzonephoto.app}"
+APP_ROOT="/usr/local/apps/@appcenter/${APPNAME}"
+DEST="${TRIM_APPDEST:-${APP_ROOT}/target}"
+VAR_DIR="${TRIM_PKGVAR:-${APP_ROOT}/var}"
+ETC_DIR="${TRIM_PKGETC:-${APP_ROOT}/etc}"
+SHARE_NAME="qzonephoto-downloads"
+CONTAINER_NAME="qzonephoto-app"
+
+CONF="${VAR_DIR}/app.conf"
+COMPOSE_FILE="${VAR_DIR}/docker-compose.yml"
+LOG_FILE="${VAR_DIR}/app.log"
+BUILD_LOG="${VAR_DIR}/build.log"
+
+mkdir -p "$VAR_DIR" "$ETC_DIR"
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [install] $*" >>"$LOG_FILE"
+}
+
+fail() {
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" >"${TRIM_TEMP_LOGFILE}"
+    fi
+    log "失败：$1"
+    exit 1
+}
+
+# 构建失败时把真实错误回显给前端对话框。
+# 注意：docker build 必须带 --progress=plain，否则日志里只有失败的命令、没有命令输出，
+# 这里就无错可抓（见 app/bin/build-image.sh）。
+fail_build() {
+    # 安装失败后飞牛会回滚删除应用目录，日志会一起消失；先复制到 /tmp 保命
+    ALT_BUILD_LOG="/tmp/qzonephoto-build.log"
+    cp -f "$BUILD_LOG" "$ALT_BUILD_LOG" 2>/dev/null || true
+    [ -s "$ALT_BUILD_LOG" ] || ALT_BUILD_LOG="$BUILD_LOG"
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        {
+            echo "镜像构建失败。以下为关键信息："
+            echo "=========================================="
+            grep -aE "^\[诊断\]|候选软件源|采用软件源|依赖闭包|缺少" "$BUILD_LOG" 2>/dev/null | tail -n 10
+            echo "------------------------------------------"
+            grep -aE "E: |^E:|ERROR|error:|Err:|Unable to locate|Temporary failure|Could not|Connection refused|Connection timed out|401 |403 |404 |not found|无法|不可用|失败" "$BUILD_LOG" 2>/dev/null | tail -n 10
+            echo "------------------------------------------"
+            tail -n 8 "$BUILD_LOG" 2>/dev/null
+            echo "=========================================="
+            echo "应用内日志：${BUILD_LOG}"
+            echo "临时副本（安装失败回滚后仍存在）：/tmp/qzonephoto-build.log"
+        } >"${TRIM_TEMP_LOGFILE}"
+    fi
+    log "镜像构建失败，详见 ${BUILD_LOG}（副本 /tmp/qzonephoto-build.log）"
+    exit 1
+}
+
+# ---------- 读取安装向导输入 ----------
+APP_VERSION="${wizard_app_version:-2.8.0}"
+BUILTIN_GITHUB_MIRROR="https://xsadwsd.kdns.fr/"
+GITHUB_MIRROR="${wizard_github_mirror:-${BUILTIN_GITHUB_MIRROR}}"
+APT_MIRROR="${wizard_apt_mirror:-}"
+SCREEN_SIZE="${wizard_screen_size:-1600x900}"
+UI_SCALE="${wizard_ui_scale:-1.25}"
+VNC_PASSWORD="${wizard_vnc_password:-}"
+WEB_PORT="${TRIM_SERVICE_PORT:-8080}"
+MOUNT_MODE="${wizard_mount_mode:-auto}"
+EXTRA_MOUNTS_RAW="${wizard_extra_mounts:-}"
+
+# ---------- 输入校验 ----------
+case "$APP_VERSION" in
+[0-9]*.*[0-9]*.*[0-9]*) ;;
+*) fail "版本号格式不正确：${APP_VERSION}（应为 x.y.z，例如 2.8.0）" ;;
+esac
+
+case "$SCREEN_SIZE" in
+[0-9]*x[0-9]*) ;;
+*) fail "分辨率格式不正确：${SCREEN_SIZE}" ;;
+esac
+
+case "$UI_SCALE" in
+1 | 1.0 | 1.25 | 1.5 | 1.75 | 2 | 2.0) ;;
+*) fail "界面缩放只能是 1.0 / 1.25 / 1.5 / 1.75 / 2.0，当前值：${UI_SCALE}" ;;
+esac
+
+if [ -n "$VNC_PASSWORD" ]; then
+    case "$VNC_PASSWORD" in
+    *[!A-Za-z0-9_.@-]*) fail "远程桌面密码只能包含字母、数字以及 . _ @ - 符号" ;;
+    esac
+fi
+
+if [ -n "$GITHUB_MIRROR" ]; then
+    case "$GITHUB_MIRROR" in
+    http://* | https://*) ;;
+    *) fail "GitHub 加速前缀必须以 http:// 或 https:// 开头：${GITHUB_MIRROR}" ;;
+    esac
+fi
+
+if [ -n "$APT_MIRROR" ]; then
+    case "$APT_MIRROR" in
+    http://* | https://*) ;;
+    *) fail "软件源地址必须以 http:// 或 https:// 开头：${APT_MIRROR}" ;;
+    esac
+fi
+
+# ---------- 目录准备 ----------
+SHARE_LINK="${APP_ROOT}/shares/${SHARE_NAME}"
+SHARE_DIR="$(readlink -f "$SHARE_LINK" 2>/dev/null)"
+if [ -z "$SHARE_DIR" ]; then
+    SHARE_DIR="$SHARE_LINK"
+fi
+mkdir -p "$SHARE_DIR" 2>/dev/null || fail "无法创建下载目录 ${SHARE_DIR}"
+
+CONFIG_DIR="${VAR_DIR}/userdata"
+mkdir -p "$CONFIG_DIR" 2>/dev/null || fail "无法创建配置目录 ${CONFIG_DIR}"
+
+qt() { printf "'%s'" "$(printf '%s' "${1:-}" | sed "s/'/'\\\\''/g")"; }
+
+# ---------- 额外挂载目录（访问其它存储卷） ----------
+# 容器内路径与宿主机保持一致；系统目录一律拒绝，避免容器获得改写宿主系统的能力
+EXTRA_MOUNTS="$(
+    MOUNT_MODE="$MOUNT_MODE" \
+        EXTRA_MOUNTS_RAW="$EXTRA_MOUNTS_RAW" \
+        EXCLUDE_DIRS="${SHARE_DIR} ${CONFIG_DIR}" \
+        bash "${DEST}/bin/resolve-mounts.sh" 2>/dev/null
+)"
+log "额外挂载目录：[${EXTRA_MOUNTS:-无}]"
+
+# ---------- 写入运行时配置 ----------
+IMAGE_TAG="qzonephoto-fnos:${APP_VERSION}"
+cat >"$CONF" <<EOF
+# 由 install_callback 生成，勿手工修改（可通过应用「配置」变更）
+APP_VERSION=$(qt "$APP_VERSION")
+GITHUB_MIRROR=$(qt "$GITHUB_MIRROR")
+APT_MIRROR=$(qt "$APT_MIRROR")
+IMAGE_TAG=$(qt "$IMAGE_TAG")
+CONTAINER_NAME=$(qt "$CONTAINER_NAME")
+SCREEN_SIZE=$(qt "$SCREEN_SIZE")
+UI_SCALE=$(qt "$UI_SCALE")
+VNC_PASSWORD=$(qt "$VNC_PASSWORD")
+WEB_PORT=$(qt "$WEB_PORT")
+SHARE_DIR=$(qt "$SHARE_DIR")
+CONFIG_DIR=$(qt "$CONFIG_DIR")
+EXTRA_MOUNTS=$(qt "$EXTRA_MOUNTS")
+EOF
+log "配置已写入 ${CONF}"
+
+# ---------- 生成容器编排 ----------
+chmod +x "${DEST}/bin/render-compose.sh" "${DEST}/bin/build-image.sh" "${DEST}/bin/resolve-mounts.sh" 2>/dev/null || true
+if ! "${DEST}/bin/render-compose.sh" "$CONF" >"$COMPOSE_FILE"; then
+    fail "生成 docker-compose.yml 失败"
+fi
+log "已生成 ${COMPOSE_FILE}"
+
+# ---------- 构建镜像 ----------
+log "开始构建镜像 ${IMAGE_TAG}（首次需下载依赖，约 5-15 分钟）"
+if ! APP_VERSION="$APP_VERSION" \
+    GITHUB_MIRROR="$GITHUB_MIRROR" \
+    BUILTIN_GITHUB_MIRROR="$BUILTIN_GITHUB_MIRROR" \
+    APT_MIRROR="$APT_MIRROR" \
+    IMAGE_TAG="$IMAGE_TAG" \
+    "${DEST}/bin/build-image.sh" "$DEST" "$BUILD_LOG"; then
+    fail_build
+fi
+
+if ! docker image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
+    fail "镜像 ${IMAGE_TAG} 构建后仍不存在，请查看 ${BUILD_LOG}"
+fi
+
+printf '%s\n' "$APP_VERSION" >"${VAR_DIR}/built-version"
+log "镜像构建完成：${IMAGE_TAG}"
+
+exit 0

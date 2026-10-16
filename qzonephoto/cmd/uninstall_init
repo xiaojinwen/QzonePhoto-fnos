@@ -1,0 +1,16 @@
+#!/bin/bash
+# 卸载前准备：停止并移除容器，避免残留进程占用共享目录
+set -u
+
+APPNAME="${TRIM_APPNAME:-com.qzonephoto.app}"
+APP_ROOT="/usr/local/apps/@appcenter/${APPNAME}"
+VAR_DIR="${TRIM_PKGVAR:-${APP_ROOT}/var}"
+COMPOSE_FILE="${VAR_DIR}/docker-compose.yml"
+CONTAINER_NAME="qzonephoto-app"
+
+if command -v docker >/dev/null 2>&1; then
+    docker compose -f "$COMPOSE_FILE" -p qzonephoto down --remove-orphans >/dev/null 2>&1 || true
+    docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+fi
+
+exit 0

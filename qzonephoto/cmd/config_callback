@@ -1,0 +1,209 @@
+#!/bin/bash
+# 配置后处理：更新运行时配置、按需重建镜像并重启容器
+set -u
+
+APPNAME="${TRIM_APPNAME:-com.qzonephoto.app}"
+APP_ROOT="/usr/local/apps/@appcenter/${APPNAME}"
+DEST="${TRIM_APPDEST:-${APP_ROOT}/target}"
+VAR_DIR="${TRIM_PKGVAR:-${APP_ROOT}/var}"
+SHARE_NAME="qzonephoto-downloads"
+
+CONF="${VAR_DIR}/app.conf"
+COMPOSE_FILE="${VAR_DIR}/docker-compose.yml"
+LOG_FILE="${VAR_DIR}/app.log"
+BUILD_LOG="${VAR_DIR}/build.log"
+
+mkdir -p "$VAR_DIR"
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [config] $*" >>"$LOG_FILE"
+}
+
+fail() {
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        echo "$1" >"${TRIM_TEMP_LOGFILE}"
+    fi
+    log "失败：$1"
+    exit 1
+}
+
+# 构建失败时把真实日志末尾回显给前端对话框
+fail_build() {
+    if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+        {
+            echo "镜像构建失败。以下为关键信息："
+            echo "=========================================="
+            grep -aE "^\[诊断\]|候选软件源|采用软件源|依赖闭包|缺少" "$BUILD_LOG" 2>/dev/null | tail -n 10
+            echo "------------------------------------------"
+            grep -aE "E: |^E:|ERROR|error:|Err:|Unable to locate|Temporary failure|Could not|Connection refused|Connection timed out|401 |403 |404 |not found|无法|不可用|失败" "$BUILD_LOG" 2>/dev/null | tail -n 10
+            echo "------------------------------------------"
+            tail -n 8 "$BUILD_LOG" 2>/dev/null
+            echo "=========================================="
+            echo "应用内日志：${BUILD_LOG}"
+            echo "临时副本（失败回滚后仍存在）：/tmp/qzonephoto-build.log"
+        } >"${TRIM_TEMP_LOGFILE}"
+    fi
+    log "镜像构建失败，详见 ${BUILD_LOG}（副本 /tmp/qzonephoto-build.log）"
+    exit 1
+}
+
+if [ ! -f "$CONF" ]; then
+    fail "未找到应用配置 ${CONF}，请重新安装本应用"
+fi
+
+# ---------- 载入现有配置 ----------
+APP_VERSION=""
+GITHUB_MIRROR=""
+# 内置备用加速前缀（常量，与 install_callback 保持一致），需一并传给构建脚本，
+# 否则以空值覆盖 Dockerfile 的同名 ARG 默认值，导致重建时内置加速失效
+BUILTIN_GITHUB_MIRROR="https://xsadwsd.kdns.fr/"
+APT_MIRROR=""
+SCREEN_SIZE=""
+UI_SCALE=""
+VNC_PASSWORD=""
+WEB_PORT="${TRIM_SERVICE_PORT:-8080}"
+CONTAINER_NAME="qzonephoto-app"
+SHARE_DIR=""
+CONFIG_DIR=""
+EXTRA_MOUNTS=""
+
+# shellcheck disable=SC1090
+. "$CONF"
+
+# 旧版本配置没有 UI_SCALE 字段，升级后自动补默认值：界面放大 25%
+[ -n "$UI_SCALE" ] || UI_SCALE="1.25"
+
+# ---------- 应用配置向导输入 ----------
+if [ -n "${wizard_app_version:-}" ]; then APP_VERSION="${wizard_app_version}"; fi
+if [ -n "${wizard_screen_size:-}" ]; then SCREEN_SIZE="${wizard_screen_size}"; fi
+if [ -n "${wizard_ui_scale:-}" ]; then UI_SCALE="${wizard_ui_scale}"; fi
+if [ -n "${wizard_github_mirror:-}" ]; then GITHUB_MIRROR="${wizard_github_mirror}"; fi
+if [ -n "${wizard_apt_mirror:-}" ]; then APT_MIRROR="${wizard_apt_mirror}"; fi
+MOUNT_MODE="${wizard_mount_mode:-keep}"
+EXTRA_MOUNTS_RAW="${wizard_extra_mounts:-}"
+if [ "${wizard_clear_password:-false}" = "true" ]; then
+    VNC_PASSWORD=""
+elif [ -n "${wizard_vnc_password:-}" ]; then
+    VNC_PASSWORD="${wizard_vnc_password}"
+fi
+
+case "$APP_VERSION" in
+[0-9]*.*[0-9]*.*[0-9]*) ;;
+*) fail "版本号格式不正确：${APP_VERSION}" ;;
+esac
+case "$SCREEN_SIZE" in
+[0-9]*x[0-9]*) ;;
+*) fail "分辨率格式不正确：${SCREEN_SIZE}" ;;
+esac
+case "$UI_SCALE" in
+1 | 1.0 | 1.25 | 1.5 | 1.75 | 2 | 2.0) ;;
+*) fail "界面缩放只能是 1.0 / 1.25 / 1.5 / 1.75 / 2.0，当前值：${UI_SCALE}" ;;
+esac
+if [ -n "$VNC_PASSWORD" ]; then
+    case "$VNC_PASSWORD" in
+    *[!A-Za-z0-9_.@-]*) fail "远程桌面密码只能包含字母、数字以及 . _ @ - 符号" ;;
+    esac
+fi
+if [ -n "$APT_MIRROR" ]; then
+    case "$APT_MIRROR" in
+    http://* | https://*) ;;
+    *) fail "软件源地址必须以 http:// 或 https:// 开头：${APT_MIRROR}" ;;
+    esac
+fi
+
+[ -n "$SHARE_DIR" ] || SHARE_DIR="$(readlink -f "${APP_ROOT}/shares/${SHARE_NAME}" 2>/dev/null)"
+[ -n "$SHARE_DIR" ] || SHARE_DIR="${APP_ROOT}/shares/${SHARE_NAME}"
+mkdir -p "$SHARE_DIR" 2>/dev/null || fail "无法创建下载目录 ${SHARE_DIR}"
+
+[ -n "$CONFIG_DIR" ] || CONFIG_DIR="${VAR_DIR}/userdata"
+mkdir -p "$CONFIG_DIR" 2>/dev/null || fail "无法创建配置目录 ${CONFIG_DIR}"
+
+qt() { printf "'%s'" "$(printf '%s' "${1:-}" | sed "s/'/'\\\\''/g")"; }
+
+# ---------- 额外挂载目录 ----------
+# keep（默认）= 保持安装时的设置；auto/manual 会重新计算，manual 可用于清空
+# 旧版本配置里没有 EXTRA_MOUNTS 字段，首次升级到新版时自动补做一次探测
+if [ "$MOUNT_MODE" = "keep" ] && ! grep -q '^EXTRA_MOUNTS=' "$CONF" 2>/dev/null; then
+    MOUNT_MODE="auto"
+    log "检测到旧版配置缺少挂载字段，本次自动补做存储卷探测"
+fi
+EXTRA_MOUNTS="$(
+    MOUNT_MODE="$MOUNT_MODE" \
+        EXTRA_MOUNTS_RAW="$EXTRA_MOUNTS_RAW" \
+        EXCLUDE_DIRS="${SHARE_DIR} ${CONFIG_DIR}" \
+        EXTRA_MOUNTS_KEEP="$EXTRA_MOUNTS" \
+        bash "${DEST}/bin/resolve-mounts.sh" 2>/dev/null
+)"
+log "额外挂载目录：[${EXTRA_MOUNTS:-无}]（模式=${MOUNT_MODE}）"
+
+IMAGE_TAG="qzonephoto-fnos:${APP_VERSION}"
+
+# ---------- 按需重建镜像 ----------
+NEED_BUILD="false"
+[ "${wizard_rebuild_image:-false}" = "true" ] && NEED_BUILD="true"
+if ! docker image inspect "$IMAGE_TAG" >/dev/null 2>&1; then
+    NEED_BUILD="true"
+fi
+
+# 容器脚本指纹：包内 Dockerfile / entrypoint 等发生变化时自动重建一次，
+# 否则容器里跑的还是旧脚本（新增的界面缩放参数就不会生效）。
+# 仅在已有指纹时触发，避免日常改配置被意外拖入一次长构建。
+FP_FILE="${VAR_DIR}/image.fp"
+PKG_FP=""
+if [ -f "${DEST}/Dockerfile" ]; then
+    PKG_FP="$(cat "${DEST}/Dockerfile" "${DEST}/entrypoint.sh" \
+        "${DEST}/provision.sh" "${DEST}/install-deb.sh" "${DEST}/build-common.sh" 2>/dev/null \
+        | md5sum | awk '{print $1}')"
+fi
+OLD_FP=""
+[ -f "$FP_FILE" ] && OLD_FP="$(cat "$FP_FILE" 2>/dev/null)"
+if [ -n "$PKG_FP" ] && [ -n "$OLD_FP" ] && [ "$PKG_FP" != "$OLD_FP" ]; then
+    log "容器脚本已更新（${OLD_FP:0:8} → ${PKG_FP:0:8}），自动重建镜像"
+    NEED_BUILD="true"
+fi
+
+if [ "$NEED_BUILD" = "true" ]; then
+    log "构建镜像 ${IMAGE_TAG}"
+    if ! APP_VERSION="$APP_VERSION" \
+        GITHUB_MIRROR="$GITHUB_MIRROR" \
+        BUILTIN_GITHUB_MIRROR="$BUILTIN_GITHUB_MIRROR" \
+        APT_MIRROR="$APT_MIRROR" \
+        IMAGE_TAG="$IMAGE_TAG" \
+        "${DEST}/bin/build-image.sh" "$DEST" "$BUILD_LOG"; then
+        fail_build
+    fi
+    printf '%s\n' "$APP_VERSION" >"${VAR_DIR}/built-version"
+    [ -n "$PKG_FP" ] && printf '%s\n' "$PKG_FP" >"$FP_FILE"
+    log "镜像构建完成"
+fi
+
+# ---------- 重写配置与容器编排 ----------
+cat >"$CONF" <<EOF
+# 由 config_callback 生成
+APP_VERSION=$(qt "$APP_VERSION")
+GITHUB_MIRROR=$(qt "$GITHUB_MIRROR")
+APT_MIRROR=$(qt "$APT_MIRROR")
+IMAGE_TAG=$(qt "$IMAGE_TAG")
+CONTAINER_NAME=$(qt "$CONTAINER_NAME")
+SCREEN_SIZE=$(qt "$SCREEN_SIZE")
+UI_SCALE=$(qt "$UI_SCALE")
+VNC_PASSWORD=$(qt "$VNC_PASSWORD")
+WEB_PORT=$(qt "$WEB_PORT")
+SHARE_DIR=$(qt "$SHARE_DIR")
+CONFIG_DIR=$(qt "$CONFIG_DIR")
+EXTRA_MOUNTS=$(qt "$EXTRA_MOUNTS")
+EOF
+
+chmod +x "${DEST}/bin/render-compose.sh" "${DEST}/bin/build-image.sh" "${DEST}/bin/resolve-mounts.sh" 2>/dev/null || true
+if ! "${DEST}/bin/render-compose.sh" "$CONF" >"$COMPOSE_FILE"; then
+    fail "生成 docker-compose.yml 失败"
+fi
+
+# ---------- 使配置生效 ----------
+APP_CMD="${APP_ROOT}/cmd/main"
+if [ -x "$APP_CMD" ]; then
+    "$APP_CMD" reload >>"$LOG_FILE" 2>&1 || true
+fi
+
+log "config_callback 完成"
+exit 0

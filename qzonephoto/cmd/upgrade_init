@@ -1,0 +1,15 @@
+#!/bin/bash
+# 更新前准备：备份现有配置，便于回滚排查
+set -u
+
+APPNAME="${TRIM_APPNAME:-com.qzonephoto.app}"
+APP_ROOT="/usr/local/apps/@appcenter/${APPNAME}"
+VAR_DIR="${TRIM_PKGVAR:-${APP_ROOT}/var}"
+BACKUP_DIR="${VAR_DIR}/backup"
+
+mkdir -p "$BACKUP_DIR"
+if [ -f "${VAR_DIR}/app.conf" ]; then
+    cp -f "${VAR_DIR}/app.conf" "${BACKUP_DIR}/app.conf.$(date '+%Y%m%d%H%M%S').bak" 2>/dev/null || true
+fi
+
+exit 0

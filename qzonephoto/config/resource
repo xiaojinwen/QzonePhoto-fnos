@@ -1,0 +1,12 @@
+{
+    "data-share": {
+        "shares": [
+            {
+                "name": "qzonephoto-downloads",
+                "permission": {
+                    "rw": ["qzonephoto"]
+                }
+            }
+        ]
+    }
+}

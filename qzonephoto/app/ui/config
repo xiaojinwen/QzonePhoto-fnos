@@ -1,0 +1,13 @@
+{
+    ".url": {
+        "com.qzonephoto.app.main": {
+            "title": "企鹅相册",
+            "icon": "images/icon-{0}.png",
+            "type": "url",
+            "protocol": "http",
+            "port": "8080",
+            "url": "/vnc.html?autoconnect=1&resize=off",
+            "allUsers": true
+        }
+    }
+}

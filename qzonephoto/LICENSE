@@ -1,0 +1,27 @@
+使用说明
+========
+
+本文件仅用于在飞牛 fnOS 应用中心安装时展示授权与隐私信息。
+
+1. 软件来源
+本应用是「企鹅相册 · QzonePhoto」的非官方打包，上游源码与二进制均来自
+https://github.com/11273/QzonePhoto ，本项目不包含任何二进制再分发内容。
+构建镜像时才会从官方 GitHub Releases 拉取 deb 安装包。
+
+2. 与腾讯的关系
+企鹅相册 · QzonePhoto 是非官方第三方工具，与腾讯、QQ 或 QQ 空间不存在
+隶属或授权关系。所有数据通过 QQ 空间网页端公开接口获取。
+
+3. 数据存放位置
+- 应用配置与登录态：@apphome/com.qzonephoto.app/config（容器内 /root/.config）
+- 下载的照片视频：共享目录 qzonephoto-downloads（容器内 /downloads）
+- 容器编排与日志：@appdata/com.qzonephoto.app/
+以上数据全部保存在本机 NAS，不会上传到任何服务器。
+
+4. 网络访问
+安装或升级构建镜像时需要访问 Debian 软件源与 GitHub Releases。
+运行时需要访问 QQ 空间相关域名以完成登录与下载。
+
+5. 开源许可
+上游项目采用 GPL-3.0-only 许可，完整正文见
+https://github.com/11273/QzonePhoto/blob/main/LICENSE
