@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HEIC 转换工具 · 企鹅相册</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #1e1e1e; color: #e6e6e6;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  header { padding: 16px 20px; background: #252526; border-bottom: 1px solid #333; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header p { margin: 4px 0 0; color: #9aa0a6; font-size: 12px; }
+  .wrap { padding: 16px 20px; max-width: 980px; margin: 0 auto; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  input[type="text"] {
+    flex: 1; min-width: 220px; padding: 8px 10px; background: #2d2d30;
+    border: 1px solid #3c3c3c; border-radius: 6px; color: #e6e6e6; font-size: 14px;
+  }
+  button {
+    padding: 8px 14px; border: 1px solid #3c3c3c; border-radius: 6px;
+    background: #0e639c; color: #fff; cursor: pointer; font-size: 14px;
+  }
+  button:hover { background: #1177bb; }
+  button.ghost { background: #333; }
+  button.ghost:hover { background: #444; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  label.chk { display: inline-flex; align-items: center; gap: 6px; color: #c8c8c8; }
+  .meta { color: #9aa0a6; font-size: 12px; margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #333; }
+  th { color: #9aa0a6; font-weight: 600; font-size: 12px; }
+  td.size, td.time { color: #bdbdbd; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .empty { padding: 24px; text-align: center; color: #777; }
+  #log {
+    margin-top: 14px; background: #111; border: 1px solid #333; border-radius: 6px;
+    padding: 10px; height: 180px; overflow: auto; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px; white-space: pre-wrap; color: #cfcfcf;
+  }
+  .ok { color: #4ec9b0; } .err { color: #f48771; } .skip { color: #dcdcaa; }
+  .bar { display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  .bar input[type=number]{ width:70px; padding:6px 8px; background:#2d2d30; border:1px solid #3c3c3c; border-radius:6px; color:#e6e6e6; }
+  .lbl { color: #9aa0a6; font-size: 13px; }
+  input[type="text"]:disabled { opacity: .45; }
+  select {
+    padding: 8px 10px; background: #2d2d30; border: 1px solid #3c3c3c;
+    border-radius: 6px; color: #e6e6e6; font-size: 14px; max-width: 100%;
+  }
+  .hint { color: #9aa0a6; font-size: 12px; }
+  /* 访问口令弹层：只填一个口令，不需要用户名 */
+  .gate {
+    position: fixed; inset: 0; background: rgba(0,0,0,.62); z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .gate[hidden] { display: none; }
+  .gate-box {
+    width: 330px; background: #252526; border: 1px solid #3c3c3c; border-radius: 10px;
+    padding: 20px 22px; box-shadow: 0 12px 32px rgba(0,0,0,.45);
+  }
+  .gate-box h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+  .gate-box p { margin: 0 0 12px; color: #9aa0a6; font-size: 12px; }
+  .gate-box input[type="password"] {
+    width: 100%; padding: 8px 10px; background: #2d2d30; border: 1px solid #3c3c3c;
+    border-radius: 6px; color: #e6e6e6; font-size: 14px;
+  }
+  .gate-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .gate-actions .chk { font-size: 12px; }
+  .gate-err { color: #f48771; font-size: 12px; margin-top: 8px; min-height: 16px; }
+</style>
+</head>
+<body>
+<header style="display:flex; align-items:flex-start; gap:12px">
+  <div style="flex:1">
+    <h1>HEIC 转换工具</h1>
+    <p>把 HEIC 转成 JPG，再由「企鹅相册」客户端上传（QQ 空间后端只收 JPG/PNG/GIF）。转换后的 JPG 可保存到原 HEIC 同目录，也可指定挂载卷下的其它目录。</p>
+  </div>
+  <button id="pwBtn" class="ghost" hidden title="清除本机保存的访问口令">清除口令</button>
+</header>
+
+<div id="gate" class="gate" hidden>
+  <div class="gate-box">
+    <h2>需要访问口令</h2>
+    <p>请输入本工具的访问口令（与「远程桌面密码」相同），无需用户名。</p>
+    <input id="gatePw" type="password" placeholder="访问口令" autocomplete="current-password" />
+    <div class="gate-actions">
+      <button id="gateOk">进入</button>
+      <label class="chk"><input id="gateRemember" type="checkbox" checked /> 记住口令</label>
+    </div>
+    <div id="gateErr" class="gate-err"></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="row">
+    <input id="root" type="text" value="/downloads" placeholder="扫描目录，例如 /downloads 或 /vol1/照片" />
+    <label class="chk"><input id="recursive" type="checkbox" checked /> 递归子目录</label>
+    <button id="scanBtn">扫描 HEIC</button>
+  </div>
+  <div class="meta" id="meta">未扫描</div>
+
+  <div class="row">
+    <span class="lbl">输出位置</span>
+    <label class="chk"><input type="radio" name="outmode" value="same" checked /> 与原 HEIC 同目录</label>
+    <label class="chk"><input type="radio" name="outmode" value="custom" /> 指定目录</label>
+    <input id="outdir" type="text" list="dirdl" placeholder="例如 /downloads/jpg；点「浏览目录」可下拉选择" disabled />
+    <datalist id="dirdl"></datalist>
+    <button id="browseBtn" class="ghost" disabled>浏览目录</button>
+    <label class="chk"><input id="keepstruct" type="checkbox" checked disabled /> 保持原目录结构</label>
+  </div>
+  <div class="row">
+    <span class="lbl">输出格式</span>
+    <select id="format">
+      <option value="jpg" selected>JPG（推荐：体积远小于 PNG）</option>
+      <option value="png">PNG（无损：画质不损失，但照片体积通常是 JPG 的数倍）</option>
+    </select>
+    <span class="hint" id="fmtHint">照片场景请选 JPG；PNG 只在需要「完全无损」时才值得，否则会明显变大。</span>
+  </div>
+
+  <div class="bar">
+    <button id="selAll" class="ghost" title="快捷键 Ctrl+A / Cmd+A">全选（Ctrl+A）</button>
+    <button id="selInv" class="ghost">反选</button>
+    <label class="chk">JPG 质量 <input id="quality" type="number" min="50" max="100" value="90" /></label>
+    <button id="convBtn">转换选中为 JPG</button>
+  </div>
+
+  <table id="tbl">
+    <thead><tr><th style="width:34px"></th><th>文件名</th><th style="width:110px">大小</th><th style="width:160px">修改时间</th><th>状态</th></tr></thead>
+    <tbody id="tbody"><tr><td colspan="5" class="empty">点击「扫描 HEIC」开始</td></tr></tbody>
+  </table>
+
+  <div id="log"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+function log(msg, cls) {
+  const el = document.createElement("div");
+  if (cls) el.className = cls;
+  el.textContent = msg;
+  $("log").appendChild(el);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+function fmtSize(n) {
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + " MB";
+  if (n >= 1024) return (n / 1024).toFixed(0) + " KB";
+  return n + " B";
+}
+function fmtTime(t) {
+  const d = new Date(t * 1000);
+  const p = (x) => String(x).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// ---------- 访问口令（只填口令，不需要用户名） ----------
+// 服务端用 HTTP Basic，但浏览器原生认证框会同时要求「用户名 + 密码」，体验很差。
+// 这里改由页面自带输入框收集口令，再以 Basic 认证头的「用户名为空、只带口令」形式发给服务端，
+// 服务端对页面 XHR 也不回 WWW-Authenticate，因此不会再弹出原生认证框。
+const PW_KEY = "heic_tool_pw";
+let authPw = localStorage.getItem(PW_KEY) || "";
+let authEnabled = false;
+
+function authHeaders() {
+  const h = { "X-Requested-With": "fetch" };
+  if (authPw) h["Authorization"] = "Basic " + btoa(unescape(encodeURIComponent(":" + authPw)));
+  return h;
+}
+function savePw(v, remember) {
+  authPw = v;
+  if (remember) localStorage.setItem(PW_KEY, v); else localStorage.removeItem(PW_KEY);
+  $("pwBtn").hidden = !(remember && authEnabled);
+}
+function showGate(msg) {
+  $("gate").hidden = false;
+  $("gateErr").textContent = msg || "";
+  $("gatePw").value = "";
+  $("gatePw").focus();
+}
+function hideGate() {
+  $("gate").hidden = true;
+  $("gateErr").textContent = "";
+}
+// 401 时抛出的标记，调用方据此判断「已在弹层里要口令」而不是真错误
+const NEED_PW = { needPw: true };
+
+async function api(url, opts) {
+  opts = opts || {};
+  const r = await fetch(url, Object.assign({}, opts, {
+    headers: Object.assign({}, authHeaders(), opts.headers || {}),
+  }));
+  if (r.status === 401) {
+    authEnabled = true;
+    showGate(authPw ? "口令不正确，请重新输入" : "");
+    throw NEED_PW;
+  }
+  return r;
+}
+// 用候选口令探测：200 表示通过，401 表示口令不对
+async function checkPw(p) {
+  const r = await fetch("/api/ping", {
+    headers: p ? { "X-Requested-With": "fetch", "Authorization": "Basic " + btoa(unescape(encodeURIComponent(":" + p))) }
+               : { "X-Requested-With": "fetch" },
+  });
+  return r.status !== 401;
+}
+async function ensureAuth() {
+  const r = await api("/api/ping");
+  const d = await r.json().catch(() => ({}));
+  authEnabled = !!d.needAuth;
+  $("pwBtn").hidden = !(authEnabled && localStorage.getItem(PW_KEY));
+  hideGate();
+  return true;
+}
+$("gateOk").onclick = async () => {
+  const v = $("gatePw").value;
+  if (!v) { $("gateErr").textContent = "请输入口令"; $("gatePw").focus(); return; }
+  $("gateOk").disabled = true;
+  const ok = await checkPw(v);
+  $("gateOk").disabled = false;
+  if (!ok) { $("gateErr").textContent = "口令不正确，请重试"; $("gatePw").select(); return; }
+  savePw(v, $("gateRemember").checked);
+  hideGate();
+  log("口令已通过，可以开始扫描", "ok");
+};
+$("gatePw").addEventListener("keydown", (e) => { if (e.key === "Enter") $("gateOk").click(); });
+$("pwBtn").onclick = () => {
+  authPw = "";
+  localStorage.removeItem(PW_KEY);
+  $("pwBtn").hidden = true;
+  showGate("");
+};
+
+let current = [];
+let scanRoot = "";
+// 体积变化百分比，例如 HEIC 2.1MB → JPG 3.7MB 显示「+76%」
+function pct(a, b) {
+  if (!a) return "";
+  const d = (b - a) / a * 100;
+  return (d >= 0 ? "+" : "") + d.toFixed(0) + "%";
+}
+
+// ---------- 输出位置：与原 HEIC 同目录 / 指定目录 ----------
+function outMode() {
+  const el = document.querySelector('input[name=outmode]:checked');
+  return el ? el.value : "same";
+}
+document.querySelectorAll('input[name=outmode]').forEach((el) => {
+  el.addEventListener("change", () => {
+    const custom = outMode() === "custom";
+    $("outdir").disabled = !custom;
+    $("browseBtn").disabled = !custom;
+    $("keepstruct").disabled = !custom;
+    if (custom && !$("outdir").value) {
+      $("outdir").value = ($("root").value.trim().replace(/\/+$/, "") || "/downloads") + "/jpg";
+    }
+  });
+});
+
+// 列出扫描目录下的子目录，填入 datalist 供下拉选择（“选择存储位置”）
+async function loadDirs() {
+  const base = $("root").value.trim() || "/downloads";
+  try {
+    const r = await api("/api/dirs?root=" + encodeURIComponent(base));
+    const d = await r.json();
+    if (d.error) { log("读取目录失败：" + d.error, "err"); return; }
+    const dl = $("dirdl");
+    dl.innerHTML = "";
+    (d.dirs || []).forEach((p) => {
+      const o = document.createElement("option");
+      o.value = p;
+      dl.appendChild(o);
+    });
+    if ((d.dirs || []).length) {
+      log(`已列出 ${d.root} 下 ${d.dirs.length} 个子目录，输入框可直接下拉选择`, "ok");
+    } else {
+      log(`${d.root} 下暂无子目录；可手写路径（需位于允许根目录内，不存在的目录会自动创建）`, "skip");
+    }
+  } catch (e) {
+    if (e === NEED_PW) return;
+    log("浏览目录失败：" + e.message, "err");
+  }
+}
+$("browseBtn").onclick = loadDirs;
+
+async function scan() {
+  const root = $("root").value.trim();
+  const rec = $("recursive").checked ? "1" : "0";
+  if (!root) return;
+  $("scanBtn").disabled = true;
+  $("meta").textContent = "扫描中…";
+  try {
+    const r = await api("/api/scan?root=" + encodeURIComponent(root) + "&recursive=" + rec);
+    const data = await r.json();
+    if (data.error) { $("meta").textContent = "错误：" + data.error; return; }
+    current = data.files || [];
+    scanRoot = data.root || "";
+    render();
+    $("meta").textContent = `共找到 ${current.length} 个 HEIC 文件（目录：${data.root}）`;
+  } catch (e) {
+    if (e === NEED_PW) { $("meta").textContent = "需要访问口令"; return; }
+    $("meta").textContent = "扫描失败：" + e.message;
+  } finally {
+    $("scanBtn").disabled = false;
+  }
+}
+
+function render() {
+  const tb = $("tbody");
+  if (!current.length) {
+    tb.innerHTML = '<tr><td colspan="5" class="empty">该目录下没有 HEIC 文件</td></tr>';
+    return;
+  }
+  tb.innerHTML = "";
+  current.forEach((f, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td><input type="checkbox" data-i="${i}" ${f.done ? "checked disabled" : ""}></td>` +
+      `<td>${f.name}<div style="color:#777;font-size:11px">${f.path}</div></td>` +
+      `<td class="size">${fmtSize(f.size)}</td>` +
+      `<td class="time">${fmtTime(f.mtime)}</td>` +
+      `<td>${f.status || ""}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function selectedPaths() {
+  const out = [];
+  document.querySelectorAll('#tbody input[type=checkbox]').forEach((cb) => {
+    if (cb.checked && !cb.disabled) out.push(current[+cb.dataset.i].path);
+  });
+  return out;
+}
+
+// 勾选/反选：抽成函数，供按钮和快捷键共用
+function selectAll() {
+  document.querySelectorAll('#tbody input[type=checkbox]:not([disabled])').forEach((c) => c.checked = true);
+}
+function selectInvert() {
+  document.querySelectorAll('#tbody input[type=checkbox]:not([disabled])').forEach((c) => c.checked = !c.checked);
+}
+$("selAll").onclick = selectAll;
+$("selInv").onclick = selectInvert;
+$("scanBtn").onclick = scan;
+
+// Ctrl+A / Cmd+A 全选列表项。
+// 注意：焦点在输入框（路径/输出目录）时不拦截，保留浏览器默认的"全选文字"行为，
+// 这也是为什么以前在输入框里按 Ctrl+A 像有用、在列表上按却没反应。
+document.addEventListener("keydown", (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  if (e.key !== "a" && e.key !== "A") return;
+  const t = e.target;
+  const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+  if (typing) return;
+  e.preventDefault();
+  const n = document.querySelectorAll('#tbody input[type=checkbox]:not([disabled])').length;
+  if (!n) { log("列表为空，请先扫描", "err"); return; }
+  selectAll();
+  log(`已全选 ${n} 个文件（Ctrl+A）`, "ok");
+});
+
+async function convert() {
+  const files = selectedPaths();
+  if (!files.length) { log("请先勾选要转换的 HEIC 文件", "err"); return; }
+  const quality = Math.max(50, Math.min(100, +$("quality").value || 90));
+  const fmt = $("format").value;
+  let outdir = "";
+  let keepstruct = true;
+  if (outMode() === "custom") {
+    outdir = $("outdir").value.trim();
+    if (!outdir) { log("请先填写输出目录，或切换为「与原 HEIC 同目录」", "err"); return; }
+    keepstruct = $("keepstruct").checked;
+  }
+  $("convBtn").disabled = true;
+  const where = outdir
+    ? (keepstruct ? `输出到 ${outdir} 下并保持 ${scanRoot || "扫描目录"} 内的目录结构` : `平铺输出到 ${outdir}`)
+    : "输出到原 HEIC 同目录";
+  log(`开始转换 ${files.length} 个文件（格式 ${fmt.toUpperCase()}${fmt === "jpg" ? "，质量 " + quality : "，无损"}，${where}）…`);
+  try {
+    const r = await api("/api/convert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ files, quality, outdir, base: scanRoot, keepstruct, format: fmt }),
+    });
+    const data = await r.json();
+    if (data.error) { log("转换失败：" + data.error, "err"); return; }
+    let totalIn = 0, totalOut = 0;
+    (data.results || []).forEach((res) => {
+      const i = current.findIndex((f) => f.path === res.src);
+      const sizeInfo = (res.size && res.srcSize)
+        ? `${fmtSize(res.srcSize)} → ${fmtSize(res.size)}（${pct(res.srcSize, res.size)}）` : "";
+      if (i >= 0) {
+        current[i].done = res.ok;
+        current[i].status = res.ok
+          ? (res.skipped ? "已存在，跳过"
+              : `已转换 → ${res.dst || ""}<br><span class="hint">${sizeInfo}</span>`)
+          : ("失败：" + res.msg);
+      }
+      if (res.ok) { totalIn += res.srcSize || 0; totalOut += res.size || 0; }
+      log(`${res.ok ? "✓" : "✗"} ${res.src}  ${res.msg || ""} ${sizeInfo}`,
+          res.ok ? (res.skipped ? "skip" : "ok") : "err");
+    });
+    render();
+    if (totalIn) {
+      log(`合计体积 ${fmtSize(totalIn)} → ${fmtSize(totalOut)}（${pct(totalIn, totalOut)}）。请在「企鹅相册」客户端里上传生成的文件。`, "ok");
+    } else {
+      log("转换完成。请在「企鹅相册」客户端里把生成的文件上传到相册。", "ok");
+    }
+  } catch (e) {
+    if (e === NEED_PW) { log("需要访问口令，请在弹窗中输入", "err"); return; }
+    log("转换请求失败：" + e.message, "err");
+  } finally {
+    $("convBtn").disabled = false;
+  }
+}
+$("convBtn").onclick = convert;
+
+// 打开页面先探测是否需要口令：需要就弹出口令框（只需口令，无需用户名）
+ensureAuth().catch(() => {});
+</script>
+</body>
+</html>

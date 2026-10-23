@@ -124,8 +124,8 @@
     "type": "text",
     "field": "wizard_app_version",
     "label": "上游版本号",
-    "description": "填写形如 2.8.0 的版本号，需在上游 Release 中真实存在",
-    "initValue": "2.8.0",
+    "description": "填写形如 2.9.0 的版本号，需在上游 Release 中真实存在",
+    "initValue": "2.9.0",
     "rules": [
      {
       "required": true,
@@ -133,7 +133,7 @@
      },
      {
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
-      "message": "格式应为 x.y.z，例如 2.8.0"
+      "message": "格式应为 x.y.z，例如 2.9.0"
      }
     ]
    },

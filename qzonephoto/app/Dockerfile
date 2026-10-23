@@ -10,7 +10,7 @@
 ARG BASE_IMAGE=debian:12-slim
 FROM ${BASE_IMAGE}
 
-ARG QZONE_VERSION=2.8.0
+ARG QZONE_VERSION=2.9.0
 # GitHub 加速前缀，例如 https://ghfast.top/ ；留空表示直连并自动尝试公共加速
 ARG GITHUB_MIRROR=""
 # 内置备用加速前缀：用户自有的 GitHub 代理，在直连不通时自动兜底
@@ -57,6 +57,14 @@ RUN set -eux; \
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
 
+# 3.5) HEIC 转换工具（纯标准库实现，提供 /api/scan、/api/convert）
+#     刻意放在 deb 安装之后：HEIC 工具改动最频繁，放最后一层可让前面的 apt 装包与
+#     deb 下载命中构建缓存，改工具时只需重跑最后这一层（秒级），
+#     不必每次都重新下载上百 MB 的官方 deb。
+COPY heic-tool/ /usr/local/bin/heic-tool/
+RUN set -eux; \
+    chmod 0755 /usr/local/bin/heic-tool/server.py
+
 # 4) noVNC 首屏：自动进入连接页，并显式关闭画面缩放（1:1 像素最清晰）
 #    如需让画面填满浏览器窗口（会略糊），可在 noVNC 侧边栏 Settings 里把 Scaling 改为 Local Scaling
 RUN set -eux; \
@@ -72,7 +80,7 @@ RUN set -eux; \
             > /usr/share/novnc/index.html; \
     fi
 
-EXPOSE 8080
+EXPOSE 8080 8090
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -sf -o /dev/null "http://127.0.0.1:${NOVNC_PORT}/vnc.html" || exit 1

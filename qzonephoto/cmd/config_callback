@@ -61,6 +61,7 @@ APT_MIRROR=""
 SCREEN_SIZE=""
 UI_SCALE=""
 VNC_PASSWORD=""
+VNC_PORT=""
 WEB_PORT="${TRIM_SERVICE_PORT:-8080}"
 CONTAINER_NAME="qzonephoto-app"
 SHARE_DIR=""
@@ -86,6 +87,9 @@ if [ "${wizard_clear_password:-false}" = "true" ]; then
 elif [ -n "${wizard_vnc_password:-}" ]; then
     VNC_PASSWORD="${wizard_vnc_password}"
 fi
+if [ -n "${wizard_vnc_port:-}" ]; then VNC_PORT="${wizard_vnc_port}"; fi
+# 旧版本配置没有 VNC_PORT 字段，自动补默认值
+[ -n "$VNC_PORT" ] || VNC_PORT="5900"
 
 case "$APP_VERSION" in
 [0-9]*.*[0-9]*.*[0-9]*) ;;
@@ -104,6 +108,10 @@ if [ -n "$VNC_PASSWORD" ]; then
     *[!A-Za-z0-9_.@-]*) fail "远程桌面密码只能包含字母、数字以及 . _ @ - 符号" ;;
     esac
 fi
+case "$VNC_PORT" in
+[0-9]*) ;;
+*) fail "原生 VNC 端口必须是数字：${VNC_PORT}" ;;
+esac
 if [ -n "$APT_MIRROR" ]; then
     case "$APT_MIRROR" in
     http://* | https://*) ;;
@@ -188,6 +196,7 @@ CONTAINER_NAME=$(qt "$CONTAINER_NAME")
 SCREEN_SIZE=$(qt "$SCREEN_SIZE")
 UI_SCALE=$(qt "$UI_SCALE")
 VNC_PASSWORD=$(qt "$VNC_PASSWORD")
+VNC_PORT=$(qt "$VNC_PORT")
 WEB_PORT=$(qt "$WEB_PORT")
 SHARE_DIR=$(qt "$SHARE_DIR")
 CONFIG_DIR=$(qt "$CONFIG_DIR")

@@ -56,13 +56,15 @@ fail_build() {
 }
 
 # ---------- 读取安装向导输入 ----------
-APP_VERSION="${wizard_app_version:-2.8.0}"
+APP_VERSION="${wizard_app_version:-2.9.0}"
 BUILTIN_GITHUB_MIRROR="https://xsadwsd.kdns.fr/"
 GITHUB_MIRROR="${wizard_github_mirror:-${BUILTIN_GITHUB_MIRROR}}"
 APT_MIRROR="${wizard_apt_mirror:-}"
 SCREEN_SIZE="${wizard_screen_size:-1600x900}"
 UI_SCALE="${wizard_ui_scale:-1.25}"
 VNC_PASSWORD="${wizard_vnc_password:-}"
+# 原生 VNC 客户端直连端口：容器内 x11vnc 固定监听 5900，映射到宿主机的这个端口
+VNC_PORT="${wizard_vnc_port:-5900}"
 WEB_PORT="${TRIM_SERVICE_PORT:-8080}"
 MOUNT_MODE="${wizard_mount_mode:-auto}"
 EXTRA_MOUNTS_RAW="${wizard_extra_mounts:-}"
@@ -70,7 +72,7 @@ EXTRA_MOUNTS_RAW="${wizard_extra_mounts:-}"
 # ---------- 输入校验 ----------
 case "$APP_VERSION" in
 [0-9]*.*[0-9]*.*[0-9]*) ;;
-*) fail "版本号格式不正确：${APP_VERSION}（应为 x.y.z，例如 2.8.0）" ;;
+*) fail "版本号格式不正确：${APP_VERSION}（应为 x.y.z，例如 2.9.0）" ;;
 esac
 
 case "$SCREEN_SIZE" in
@@ -138,6 +140,7 @@ CONTAINER_NAME=$(qt "$CONTAINER_NAME")
 SCREEN_SIZE=$(qt "$SCREEN_SIZE")
 UI_SCALE=$(qt "$UI_SCALE")
 VNC_PASSWORD=$(qt "$VNC_PASSWORD")
+VNC_PORT=$(qt "$VNC_PORT")
 WEB_PORT=$(qt "$WEB_PORT")
 SHARE_DIR=$(qt "$SHARE_DIR")
 CONFIG_DIR=$(qt "$CONFIG_DIR")

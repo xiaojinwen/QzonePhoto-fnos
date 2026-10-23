@@ -7,6 +7,11 @@
 #   现在改为：逐个候选源尝试，直到「apt-get update 成功 且 所需包全部可定位」才采用。
 #   同时：发行版代号从 /etc/os-release 读取而非写死；包名支持备选（Debian 13 起
 #   libcups2 → libcups2t64 等 64 位 time_t 迁移改名），按索引实际存在者选取。
+#
+# 依赖分两类：
+#   CORE_SPECS —— 主程序运行必需。缺任何一个即视为该源不可用；全部源都装不上才失败。
+#   OPT_SPECS  —— 可选增强（HEIC 图像转换）。装不上只告警，绝不影响主程序安装，
+#                 对应功能在容器内运行时会优雅降级（HEIC 工具提示"未找到 heif-convert"）。
 set -u
 . "$(dirname "$0")/build-common.sh"
 
@@ -16,8 +21,8 @@ PRETTY="$(. /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-未知发�
 diag "基础镜像：${PRETTY}｜代号=${SUITE}｜架构=${ARCH}"
 [ "$ARCH" = "amd64" ] || diag "注意：当前架构为 ${ARCH}，而上游仅发布 amd64 版 deb"
 
-# 所需包。"|" 分隔备选名（不同 Debian 版本包名可能不同）
-SPECS="
+# 必需包。"|" 分隔备选名（不同 Debian 版本包名可能不同）
+CORE_SPECS="
 ca-certificates
 curl
 tzdata
@@ -62,6 +67,17 @@ libcups2|libcups2t64
 libdbus-1-3
 libexpat1
 libglib2.0-0
+python3
+"
+
+# 可选包：HEIC 图像转换（heif-convert）。
+#   Debian 系 heif-convert 由 libheif-examples 提供；libheif-tools 是其它发行版的名称，
+#   仅作兜底（Debian 12 里并不存在，曾因写成裸 libheif-tools 导致构建失败）。
+#   libheif-plugin-libde265 是新版 libheif 的 HEVC 解码插件；Debian 12 的 libheif1 已内置
+#   依赖 libde265-0，故用备选名兼容两代。
+OPT_SPECS="
+libheif-examples|libheif-tools
+libheif-plugin-libde265|libde265-0
 "
 
 # 候选源：向导首选（已由宿主机按可达性排序）+ 官方源兜底（去重）
@@ -80,7 +96,7 @@ diag "候选软件源（按序尝试）：${SRC_LIST}"
 OK=0
 WINNER=""
 REPORT=""
-TOTAL="$(printf '%s\n' $SPECS | grep -c .)"
+TOTAL="$(printf '%s\n' $CORE_SPECS | grep -c .)"
 
 for S in $SRC_LIST; do
     log "=== 尝试软件源: ${S} ==="
@@ -97,7 +113,7 @@ for S in $SRC_LIST; do
 
     RESOLVED=""
     MISSING=""
-    for spec in $SPECS; do
+    for spec in $CORE_SPECS; do
         if n="$(pick "$spec")"; then
             RESOLVED="${RESOLVED} ${n}"
         else
@@ -106,15 +122,15 @@ for S in $SRC_LIST; do
     done
 
     if [ -n "$MISSING" ]; then
-        diag "源 ${S}：索引可访问，但缺少这些包 →${MISSING}"
+        diag "源 ${S}：索引可访问，但缺少必需包 →${MISSING}"
         rm -rf /var/lib/apt/lists/*
         REPORT="${REPORT}
-  ${S}  → 缺少:${MISSING}"
+  ${S}  → 缺少必需包:${MISSING}"
         continue
     fi
 
     CNT="$(printf '%s\n' $RESOLVED | grep -c .)"
-    log ">>> 采用软件源: ${S}（${SUITE}，${CNT}/${TOTAL} 个包全部可定位）"
+    log ">>> 采用软件源: ${S}（${SUITE}，${CNT}/${TOTAL} 个必需包全部可定位）"
     if apt-get install -y --no-install-recommends $RESOLVED; then
         OK=1
         WINNER="$S"
@@ -127,10 +143,31 @@ for S in $SRC_LIST; do
 done
 
 if [ "$OK" != "1" ]; then
-    log "E: 所有候选软件源均无法完成依赖安装"
+    log "E: 所有候选软件源均无法完成必需依赖安装"
     diag "逐源结果："
     printf '%s\n' "$REPORT" | sed 's/^/[诊断] /'
-    die "运行时依赖安装失败：请在安装向导中把「容器内 Debian 软件源」改为清华 TUNA 或 Debian 官方源后重试"
+    die "必需依赖安装失败：请在安装向导中把「容器内 Debian 软件源」改为清华 TUNA 或 Debian 官方源后重试"
+fi
+
+# ---------- 可选：HEIC 图像转换依赖（失败绝不阻断安装） ----------
+OPT_RESOLVED=""
+OPT_MISSING=""
+for spec in $OPT_SPECS; do
+    if n="$(pick "$spec")"; then
+        OPT_RESOLVED="${OPT_RESOLVED} ${n}"
+    else
+        OPT_MISSING="${OPT_MISSING} ${spec%%|*}"
+    fi
+done
+if [ -n "$OPT_MISSING" ]; then
+    diag "HEIC 可选依赖在当前源缺失：${OPT_MISSING}（仅影响「HEIC 转换」工具，主程序不受影响）"
+fi
+if [ -n "$OPT_RESOLVED" ]; then
+    if apt-get install -y --no-install-recommends $OPT_RESOLVED; then
+        log "HEIC 可选依赖安装完成：${OPT_RESOLVED}"
+    else
+        diag "HEIC 可选依赖安装失败（仅影响「HEIC 转换」工具，主程序不受影响）"
+    fi
 fi
 
 # 中文 locale

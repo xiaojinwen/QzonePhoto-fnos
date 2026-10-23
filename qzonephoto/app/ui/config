@@ -8,6 +8,15 @@
             "port": "8080",
             "url": "/vnc.html?autoconnect=1&resize=off",
             "allUsers": true
+        },
+        "com.qzonephoto.app.heic": {
+            "title": "HEIC 转换",
+            "icon": "images/icon-{0}.png",
+            "type": "url",
+            "protocol": "http",
+            "port": "8090",
+            "url": "/",
+            "allUsers": true
         }
     }
 }

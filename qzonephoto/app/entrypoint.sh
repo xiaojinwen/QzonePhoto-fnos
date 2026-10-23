@@ -9,6 +9,11 @@ LOG_DIR="/var/log/qzonephoto"
 SCREEN_SIZE="${SCREEN_SIZE:-1600x900}"
 NOVNC_PORT="${NOVNC_PORT:-8080}"
 VNC_PASSWORD="${VNC_PASSWORD:-}"
+# HEIC 转换工具：监听端口与允许扫描的根目录（多个用逗号分隔）
+# 若需固定根目录而非自动探测挂载卷，设置 HEIC_TOOL_ROOTS_OVERRIDE=1 并指定 HEIC_TOOL_ROOTS
+HEIC_TOOL_PORT="${HEIC_TOOL_PORT:-8090}"
+HEIC_TOOL_ROOTS="${HEIC_TOOL_ROOTS:-/downloads}"
+HEIC_TOOL_ROOTS_OVERRIDE="${HEIC_TOOL_ROOTS_OVERRIDE:-}"
 # 界面缩放：放大应用内的文字与按钮。1.0=原始大小，1.25=放大 25%（推荐）
 # 原理：给 Electron 传 --force-device-scale-factor，画面以更高的像素密度渲染，
 #       应用内可用区域（CSS 像素）相应变小，按钮和字号看起来就更大，同时保持 1:1 像素不模糊。
@@ -138,11 +143,12 @@ start_display_stack() {
 
     DISPLAY=:99 xset s off -dpms -display :99 s noblank >>"$LOG_DIR/xset.log" 2>&1 || true
 
+    # -threads：启用多线程编码，多核 NAS 上画面刷新更跟手
     if [ -n "$VNC_PASSWORD" ]; then
-        x11vnc -display :99 -forever -shared -rfbport 5900 \
+        x11vnc -display :99 -forever -shared -threads -rfbport 5900 \
             -passwd "$VNC_PASSWORD" >>"$LOG_DIR/x11vnc.log" 2>&1 &
     else
-        x11vnc -display :99 -forever -shared -nopw -rfbport 5900 \
+        x11vnc -display :99 -forever -shared -threads -nopw -rfbport 5900 \
             >>"$LOG_DIR/x11vnc.log" 2>&1 &
     fi
     PID_X11VNC=$!
@@ -250,8 +256,40 @@ log_mounts() {
 }
 log_mounts
 
+# HEIC 转换工具：扫描允许根目录下的 .heic 并转成 JPG，供客户端上传
+start_heic_tool() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        log "未找到 python3，HEIC 转换工具不启动"
+        return 0
+    fi
+    if [ ! -f /usr/local/bin/heic-tool/server.py ]; then
+        log "未找到 HEIC 转换工具，跳过"
+        return 0
+    fi
+    # 默认根目录：共享目录 + 已挂载的存储卷；若用户显式设置了 HEIC_TOOL_ROOTS 则不覆盖
+    if [ -z "${HEIC_TOOL_ROOTS_OVERRIDE:-}" ]; then
+        local roots="/downloads"
+        for d in /vol[0-9]* /vol[0-9][0-9] /mnt/* /media/*; do
+            [ -d "$d" ] && roots="${roots},${d}"
+        done
+        HEIC_TOOL_ROOTS="$roots"
+    fi
+    # 访问口令：与远程桌面密码取同一个值（HEIC_TOOL_PASSWORD 为空时 8090 不做认证）
+    [ -n "${HEIC_TOOL_PASSWORD:-}" ] || HEIC_TOOL_PASSWORD="${VNC_PASSWORD:-}"
+    HEIC_TOOL_PORT="$HEIC_TOOL_PORT" HEIC_TOOL_ROOTS="$HEIC_TOOL_ROOTS" \
+        HEIC_TOOL_PASSWORD="$HEIC_TOOL_PASSWORD" \
+        python3 /usr/local/bin/heic-tool/server.py >>"$LOG_DIR/heic-tool.log" 2>&1 &
+    PID_HEIC=$!
+    if [ -n "$HEIC_TOOL_PASSWORD" ]; then
+        log "HEIC 转换工具已启动 pid=${PID_HEIC}（端口 ${HEIC_TOOL_PORT}，已启用访问密码）"
+    else
+        log "HEIC 转换工具已启动 pid=${PID_HEIC}（端口 ${HEIC_TOOL_PORT}，未设密码，无需认证）"
+    fi
+}
+
 log "启动虚拟桌面 ${SCREEN_SIZE}，界面缩放 ${UI_SCALE}x"
 start_display_stack
+start_heic_tool
 fit_window &
 start_app
 
@@ -268,6 +306,10 @@ while true; do
     if ! kill -0 "${PID_NOVNC:-}" 2>/dev/null; then
         log "noVNC 已退出，重启显示栈"
         start_display_stack
+    fi
+    if ! kill -0 "${PID_HEIC:-}" 2>/dev/null; then
+        log "HEIC 转换工具已退出，重新启动"
+        start_heic_tool
     fi
     if ! kill -0 "${PID_APP:-}" 2>/dev/null; then
         log "主程序已退出，重新启动"

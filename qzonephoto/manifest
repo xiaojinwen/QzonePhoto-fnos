@@ -1,5 +1,5 @@
 appname=com.qzonephoto.app
-version=2.8.1
+version=2.8.14
 display_name=企鹅相册
 desc=企鹅相册 · QzonePhoto —— 用于备份与管理 QQ 空间相册、照片、视频与动态的桌面客户端。<br/>本包将其官方 Linux 版本运行在 Docker 容器中，通过浏览器远程桌面（noVNC）直接操作，无需在电脑上安装客户端。<br/>上游项目：<a href="https://github.com/11273/QzonePhoto" target="_blank">github.com/11273/QzonePhoto</a>（非腾讯官方产品）
 platform=x86
@@ -14,4 +14,4 @@ os_min_version=0.9.0
 desktop_uidir=ui
 desktop_applaunchname=com.qzonephoto.app.main
 ctl_stop=true
-changelog=2.8.1 优化远程桌面显示效果：新增「界面缩放」（100%/125%/150%/175%/200%，以更高像素密度渲染，放大后依然清晰）；主程序窗口改为自动铺满虚拟屏幕并在运行中持续校正；桌面图标与首屏打开 noVNC 时默认关闭画面拉伸（1:1 原生像素，不再发虚）；升级后会自动重建一次镜像以应用新的容器内脚本。
+changelog=2.8.14 上游客户端默认版本升级为 2.9.0：安装向导「上游版本号」默认值、Dockerfile 的 QZONE_VERSION 与镜像 tag 默认值同步调整（已安装的可在「配置 → 版本维护」里直接改版本号触发重建）。HEIC 转换工具（8090）不再弹出浏览器的「用户名 + 密码」原生认证框：改为页面内口令输入框，只需填远程桌面密码，可勾选「记住口令」；页面本身免认证（只是静态 UI），/api 接口仍强制校验，用其它客户端直接访问时仍走标准 Basic 认证（用户名可留空）。2.8.13 HEIC 转换工具（8090）新增访问认证，与远程桌面密码共用同一个：设置「远程桌面密码」后打开 8090 会弹出 HTTP Basic 认证框（用户名任意、密码即远程桌面密码），未设密码时仍免认证，不影响既有用法。实现为纯标准库 Basic 认证，并用 hmac.compare_digest 做定长比较；扫描/转换的路径越权拦截保持不变。2.8.12 原生 VNC 端口可配置

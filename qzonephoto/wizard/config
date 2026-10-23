@@ -85,10 +85,23 @@
     "field": "wizard_clear_password",
     "label": "清除密码",
     "description": "开启后远程桌面不再需要密码",
-    "initValue": "false"
-   }
-  ]
- },
+   "initValue": "false"
+  },
+  {
+   "type": "text",
+   "field": "wizard_vnc_port",
+   "label": "原生 VNC 端口",
+   "description": "RealVNC / macOS 屏幕共享等原生客户端直连用的端口（容器内固定 5900，映射到宿主机的这个端口）。若 5900 已被其它服务占用，可改成 5901 等。",
+   "initValue": "5900",
+   "rules": [
+    {
+     "pattern": "^[0-9]{1,5}$",
+     "message": "请输入 1-65535 之间的端口号"
+    }
+   ]
+  }
+ ]
+},
  {
   "stepTitle": "存储与挂载",
   "items": [
@@ -148,7 +161,7 @@
     "rules": [
      {
       "pattern": "^([0-9]+\\.[0-9]+\\.[0-9]+)?$",
-      "message": "格式应为 x.y.z，例如 2.8.0"
+      "message": "格式应为 x.y.z，例如 2.9.0"
      }
     ]
    },
@@ -156,8 +169,8 @@
     "type": "text",
     "field": "wizard_github_mirror",
     "label": "GitHub 加速前缀",
-    "description": "留空表示保持当前设置；更换后可填任意 http(s) 前缀，例如 https://ghfast.top/",
-    "initValue": "",
+    "description": "默认已预填内置加速地址，一般无需修改；更换后可填任意 http(s) 前缀，例如 https://ghfast.top/",
+    "initValue": "https://xsadwsd.kdns.fr/",
     "rules": [
      {
       "pattern": "^(https?://.*)?$",

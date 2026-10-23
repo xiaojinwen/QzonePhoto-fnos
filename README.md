@@ -63,7 +63,7 @@ tools/fnpack.exe build --directory qzonephoto
    - 远程桌面分辨率（默认 1600x900）
    - 界面缩放（默认 125%，放大应用内的文字与按钮）
    - 远程桌面密码（可选，建议局域网内设置）
-   - 上游版本号（默认 2.8.0）
+   - 上游版本号（默认 2.9.0）
    - GitHub 加速前缀（**默认已预填一个可用加速地址** `https://xsadwsd.kdns.fr/`，一般无需修改）
    - **容器内 Debian 软件源**（默认腾讯云，可选清华/阿里/华为/中科大/南大/网易/官方）
 4. 首次安装需构建镜像，约 5–15 分钟。构建前会自动预检下载源并在日志里打印结果。
@@ -89,6 +89,61 @@ tools/fnpack.exe build --directory qzonephoto
 
 改完会在「配置」提交后自动重启容器。主程序窗口会自动铺满虚拟屏幕；
 万一没铺满，进入桌面后手动最大化一次即可。
+
+## HEIC 照片怎么办（新增）
+
+QzonePhoto 官方客户端只接受 JPG / PNG / GIF / BMP / WEBP，HEIC 在文件选择框里被硬拦截；
+而且本容器基于 `debian:12-slim`，默认没有 HEIC 解码库。这与官方 QQ 相册工具的做法一致：
+**上传前先把 HEIC 转成 JPG**，再交给客户端上传（QQ 空间后端只收 JPG/PNG/GIF）。
+
+本包已内置「HEIC 转换」工具来解决它：
+
+- **入口**：桌面图标「HEIC 转换」，或直接浏览器打开 `http://<NAS_IP>:8090`。
+- **访问密码**：8090 与远程桌面**共用同一个密码**——设置了「远程桌面密码」后，打开 8090 会在页面内弹出
+  口令输入框，**只需填一个密码（即远程桌面密码），不用填用户名**；可勾选「记住口令」免得每次输入。
+  未设密码则 8090 免认证。
+- **用法**：
+  1. 在目录框输入要扫描的路径（默认 `/downloads`，已自动包含 `/vol1`、`/mnt/*`、`/media/*` 等挂载卷），点「扫描 HEIC」；
+  2. 列表里勾选要处理的 `.heic` 文件（「全选 / 反选」可批量），设好 JPG 质量（默认 90）；
+  3. 选择「输出位置」——默认**与原 HEIC 同目录**；也可选「指定目录」，填写或用「浏览目录」下拉选择目标路径；
+     - 勾选「**保持原目录结构**」后，只替换最前面的根目录：`/downloads/photos/2023/trip/a.heic` → `/vol2/jpg/2023/trip/a.jpg`；
+     - 不勾选则平铺，所有 JPG 直接放到你指定的那一个目录里；
+  4. 选择「输出格式」：**JPG**（推荐，照片体积小很多）或 PNG（无损，但照片通常体积翻倍，见下方说明）；
+  5. 点「转换选中为 JPG」，生成的图片会出现在你指定的位置，每条结果会显示 `转换前 → 转换后` 的体积与百分比变化；
+  5. 回到「企鹅相册」客户端，把生成的 JPG 正常上传到相册即可。
+- **用于补传漏传的 HEIC**：之前被客户端跳过的 HEIC，用本工具扫出来转成 JPG，再在客户端里上传这些 JPG 即可。
+- 转出的 JPG 已存在时会自动跳过，可重复运行不覆盖。
+
+**为什么照片建议用 JPG 而不是 PNG？**
+HEIC 用 HEVC 做有损压缩，JPG 同为有损格式，所以 HEIC → JPG 体积变化不大；而 **PNG 是无损压缩**，要为照片的每一个像素精确编码，同一张照片的 PNG 通常比 JPG **大 3～10 倍**。只有在「必须保留每一个像素、完全不能有损」时才选 PNG（例如要做二次编辑归档）；单纯为了上传到 QQ 空间相册，JPG 更合适——若还想再小一点，把质量调到 80～85 即可（默认 90）。
+- 工具后端纯 Python 标准库，无第三方依赖；容器崩溃会自动拉起。
+
+> 端口 8090 由 docker-compose 直接映射到宿主机；若飞牛防火墙未放行，直接在浏览器用 `http://<NAS_IP>:8090` 访问即可。
+
+## 远程桌面卡顿？改用原生 VNC 客户端
+
+noVNC（网页）要经过 websockify 转 WebSocket、再由浏览器 JS 解码，在 NAS 这种弱 CPU 上很吃力，容易卡。
+容器内的 x11vnc 本来就监听 5900，本包已把它**映射到宿主机的 5900 端口**，可用原生客户端直连：
+
+- **Windows**：RealVNC Viewer / TigerVNC / MobaXterm 内置 VNC
+- **macOS**：访达 → 前往 → 连接服务器，填 `vnc://<NAS_IP>:5900`（或终端执行 `open vnc://<NAS_IP>:5900`）
+- **手机**：VNC Viewer（iOS / Android）
+- **Linux**：Remmina、KRDC
+
+原生客户端走 RFB 协议直连，省掉 WebSocket 与浏览器解码两层开销，流畅度通常明显好于网页。
+
+**仍然卡的话，再按顺序调这几点：**
+
+1. 应用「配置」里把**分辨率调小**（如 1280x720）、**界面缩放调低**——像素越少越省，这是最有效的一项；
+2. 原生客户端里把画质调到 Low、编码选 Tight / ZRLE（RealVNC：Options → Picture quality → Low）；
+3. 继续用网页时：noVNC 侧边栏 Settings 里把 Quality 调低、关闭画面缩放。
+
+> ⚠️ **安全提示**：5900 与 8090 都暴露在局域网。**未设置远程桌面密码时，同一局域网内任何人都能连入并操作桌面、
+> 也能随意使用 HEIC 转换工具**，建议先设一个密码。设了密码后：
+> - 原生 VNC 客户端（5900）需填该密码；
+> - 网页 noVNC（8080）与 HEIC 工具（8090）都会要求输入该密码，密码相同（8090 只需填密码，不用填用户名）。
+>
+> 注意：VNC 的经典认证**只取密码前 8 位**，超过 8 位的部分不参与校验。
 
 ## 重启与常用命令
 
@@ -184,7 +239,7 @@ hosts 记录、`/etc/resolv.conf` 在构建容器里统统拿不到，所以「�
 
 ```
 apt  源预检 [200] http://mirrors.cloud.tencent.com/debian
-deb  源预检 [200] https://xsadwsd.kdns.fr/https://github.com/.../QzonePhoto-2.8.0-linux-amd64.deb
+deb  源预检 [200] https://xsadwsd.kdns.fr/https://github.com/.../QzonePhoto-2.9.0-linux-amd64.deb
 软件源尝试顺序：http://mirrors.cloud.tencent.com/debian ...
 deb 源预检成功（HTTP 200），锁定下载来源：https://xsadwsd.kdns.fr/
 ```
@@ -220,10 +275,10 @@ find /vol* /usr/local/apps -maxdepth 4 -name build.log -path '*com.qzonephoto*' 
 mkdir -p /tmp/qzd && cd /tmp/qzd
 tar -xzf /path/to/com.qzonephoto.app.fpk app.tgz   # fpk 是 tar.gz
 tar -xzf app.tgz
-APP_VERSION=2.8.0 \
+APP_VERSION=2.9.0 \
 GITHUB_MIRROR=https://xsadwsd.kdns.fr/ \
 BUILTIN_GITHUB_MIRROR=https://xsadwsd.kdns.fr/ \
-IMAGE_TAG=qzonephoto-fnos:2.8.0 \
+IMAGE_TAG=qzonephoto-fnos:2.9.0 \
   bash bin/build-image.sh . /tmp/qz-manual.log
 echo "退出码=$?"; tail -n 40 /tmp/qz-manual.log
 ```
@@ -320,7 +375,7 @@ df -h | grep -E '/vol|/mnt|/media'
 
 ### 升级上游客户端（QzonePhoto 侧）
 
-改 `wizard/install` 里 `wizard_app_version` 的默认值（当前 2.8.0），重新打包；
+改 `wizard/install` 里 `wizard_app_version` 的默认值（当前 2.9.0），重新打包；
 也可不动包，直接在应用「配置 → 版本维护」里改上游版本号，会触发 config_callback 自动构建新镜像
 （版本号需真实存在于上游 GitHub Releases，镜像 tag 为 `qzonephoto-fnos:<上游版本>`）。
 
